@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lighthouse Test Suite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: #1976d2;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .form-section {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        input, textarea, button {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: #1565c0;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .branch-config {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .results {
+            padding: 20px;
+            display: none;
+        }
+
+        .result-item {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .result-header {
+            background: #f8f9fa;
+            padding: 15px;
+            font-weight: 500;
+        }
+
+        .result-content {
+            padding: 15px;
+        }
+
+        .score-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .score-item {
+            text-align: center;
+            padding: 15px;
+            border-radius: 4px;
+            background: #f8f9fa;
+        }
+
+        .score-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .score-good { color: #4caf50; }
+        .score-average { color: #ff9800; }
+        .score-poor { color: #f44336; }
+
+        .comparison {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+
+        .improvement {
+            color: #4caf50;
+            font-weight: 500;
+        }
+
+        .regression {
+            color: #f44336;
+            font-weight: 500;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Lighthouse Test Suite</h1>
+            <p>Analysiere Website-Performance und vergleiche Branches</p>
+        </div>
+
+        <div class="form-section">
+            <form id="lighthouseForm">
+                <div class="form-group">
+                    <label for="urls">URLs zum Testen (eine pro Zeile):</label>
+                    <textarea id="urls" placeholder="https://example.com&#10;https://example.com/about" required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="enableBranches"> Branch-Vergleich aktivieren
+                    </label>
+                </div>
+
+                <div id="branchConfig" class="branch-config" style="display: none;">
+                    <div class="form-group">
+                        <label for="projectPath">Projektverzeichnis:</label>
+                        <input type="text" id="projectPath" placeholder="/pfad/zum/projekt">
+                    </div>
+                    <div class="form-group">
+                        <label for="branch1">Baseline Branch:</label>
+                        <input type="text" id="branch1" placeholder="main">
+                    </div>
+                    <div class="form-group">
+                        <label for="branch2">Vergleichs-Branch:</label>
+                        <input type="text" id="branch2" placeholder="feature-branch">
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn">Lighthouse Tests starten</button>
+            </form>
+        </div>
+
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('lighthouseForm');
+        const enableBranches = document.getElementById('enableBranches');
+        const branchConfig = document.getElementById('branchConfig');
+        const results = document.getElementById('results');
+        const submitBtn = document.getElementById('submitBtn');
+
+        enableBranches.addEventListener('change', function() {
+            branchConfig.style.display = this.checked ? 'block' : 'none';
+        });
+
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const urls = document.getElementById('urls').value.split('\n').filter(url => url.trim());
+            const projectPath = document.getElementById('projectPath').value;
+            const branch1 = document.getElementById('branch1').value;
+            const branch2 = document.getElementById('branch2').value;
+
+            if (urls.length === 0) {
+                alert('Bitte geben Sie mindestens eine URL ein.');
+                return;
+            }
+
+            if (enableBranches.checked && (!projectPath || !branch1 || !branch2)) {
+                alert('Bitte füllen Sie alle Branch-Konfigurationsfelder aus.');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Tests laufen...';
+            results.style.display = 'block';
+            results.innerHTML = '<div class="loading">Lighthouse Tests werden ausgeführt...</div>';
+
+            try {
+                const response = await fetch('/run-lighthouse', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        urls,
+                        projectPath: enableBranches.checked ? projectPath : null,
+                        branch1: enableBranches.checked ? branch1 : null,
+                        branch2: enableBranches.checked ? branch2 : null,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error);
+                }
+
+                displayResults(data);
+            } catch (error) {
+                results.innerHTML = `<div class="error">Fehler: ${error.message}</div>`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Lighthouse Tests starten';
+            }
+        });
+
+        function displayResults(data) {
+            let html = '';
+
+            if (data.comparison) {
+                html += displayComparison(data.comparison, data.branch1, data.branch2);
+            } else if (data.single) {
+                html += displaySingleResults(data.single);
+            }
+
+            results.innerHTML = html;
+        }
+
+        function displaySingleResults(results) {
+            let html = '<h2>Lighthouse Ergebnisse</h2>';
+
+            results.forEach(result => {
+                if (result.error) {
+                    html += `<div class="error">Fehler für ${result.url}: ${result.error}</div>`;
+                    return;
+                }
+
+                html += `
+                    <div class="result-item">
+                        <div class="result-header">${result.url}</div>
+                        <div class="result-content">
+                            ${displayScores(result.scores)}
+                            ${displayMetrics(result.metrics)}
+                        </div>
+                    </div>
+                `;
+            });
+
+            return html;
+        }
+
+        function displayComparison(comparison, branch1Results, branch2Results) {
+            let html = `
+                <h2>Branch-Vergleich</h2>
+                <div class="comparison">
+                    <h3>Zusammenfassung</h3>
+                    <p><strong>Baseline:</strong> ${comparison.baseline}</p>
+                    <p><strong>Vergleich:</strong> ${comparison.comparison}</p>
+                    <p><strong>URLs mit Verbesserungen:</strong> ${comparison.summary.urlsWithImprovements}</p>
+                    <p><strong>URLs mit Verschlechterungen:</strong> ${comparison.summary.urlsWithRegressions}</p>
+                </div>
+            `;
+
+            html += '<h3>Detaillierte Ergebnisse</h3>';
+
+            branch1Results.forEach((result, index) => {
+                const branch2Result = branch2Results[index];
+
+                html += `
+                    <div class="result-item">
+                        <div class="result-header">${result.url}</div>
+                        <div class="result-content">
+                            <h4>${comparison.baseline}</h4>
+                            ${displayScores(result.scores)}
+                            <h4>${comparison.comparison}</h4>
+                            ${displayScores(branch2Result.scores)}
+                            ${displayScoreComparison(result.scores, branch2Result.scores)}
+                        </div>
+                    </div>
+                `;
+            });
+
+            return html;
+        }
+
+        function displayScores(scores) {
+            return `
+                <div class="score-grid">
+                    ${Object.entries(scores).map(([category, score]) => `
+                        <div class="score-item">
+                            <div class="score-value ${getScoreClass(score)}">${score}</div>
+                            <div>${getCategoryName(category)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function displayMetrics(metrics) {
+            return `
+                <h4>Metriken</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                    ${Object.entries(metrics).map(([metric, value]) => `
+                        <div>
+                            <strong>${getMetricName(metric)}:</strong> ${formatMetricValue(metric, value)}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function displayScoreComparison(scores1, scores2) {
+            let html = '<h4>Veränderungen</h4><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">';
+
+            Object.entries(scores1).forEach(([category, score1]) => {
+                const score2 = scores2[category];
+                const change = score2 - score1;
+                const changeClass = change > 0 ? 'improvement' : change < 0 ? 'regression' : '';
+                const arrow = change > 0 ? '↗' : change < 0 ? '↘' : '→';
+
+                html += `
+                    <div class="${changeClass}">
+                        <strong>${getCategoryName(category)}:</strong> ${score1} ${arrow} ${score2} (${change > 0 ? '+' : ''}${change})
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            return html;
+        }
+
+        function getScoreClass(score) {
+            if (score >= 90) return 'score-good';
+            if (score >= 50) return 'score-average';
+            return 'score-poor';
+        }
+
+        function getCategoryName(category) {
+            const names = {
+                'performance': 'Performance',
+                'accessibility': 'Zugänglichkeit',
+                'best-practices': 'Best Practices',
+                'seo': 'SEO'
+            };
+            return names[category] || category;
+        }
+
+        function getMetricName(metric) {
+            const names = {
+                'first-contentful-paint': 'First Contentful Paint',
+                'largest-contentful-paint': 'Largest Contentful Paint',
+                'speed-index': 'Speed Index',
+                'cumulative-layout-shift': 'Cumulative Layout Shift',
+                'total-blocking-time': 'Total Blocking Time'
+            };
+            return names[metric] || metric;
+        }
+
+        function formatMetricValue(metric, value) {
+            if (metric === 'cumulative-layout-shift') {
+                return value.toFixed(3);
+            }
+            return Math.round(value) + 'ms';
+        }
+    </script>
+</body>
+</html>
