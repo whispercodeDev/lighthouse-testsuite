@@ -312,27 +312,104 @@
                     <p><strong>Vergleich:</strong> ${comparison.comparison}</p>
                     <p><strong>URLs mit Verbesserungen:</strong> ${comparison.summary.urlsWithImprovements}</p>
                     <p><strong>URLs mit Verschlechterungen:</strong> ${comparison.summary.urlsWithRegressions}</p>
+                    <p><strong>Gesamte Verbesserungen:</strong> ${comparison.summary.totalImprovements}</p>
+                    <p><strong>Gesamte Verschlechterungen:</strong> ${comparison.summary.totalRegressions}</p>
                 </div>
             `;
 
-            html += '<h3>Detaillierte Ergebnisse</h3>';
+            html += '<h3>Detaillierte Vergleiche</h3>';
 
-            branch1Results.forEach((result, index) => {
-                const branch2Result = branch2Results[index];
+            comparison.detailed.forEach((urlData, index) => {
+                const result1 = branch1Results[index];
+                const result2 = branch2Results[index];
 
                 html += `
                     <div class="result-item">
-                        <div class="result-header">${result.url}</div>
+                        <div class="result-header">${urlData.url}</div>
                         <div class="result-content">
-                            <h4>${comparison.baseline}</h4>
-                            ${displayScores(result.scores)}
-                            <h4>${comparison.comparison}</h4>
-                            ${displayScores(branch2Result.scores)}
-                            ${displayScoreComparison(result.scores, branch2Result.scores)}
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                                <div>
+                                    <h4>${comparison.baseline}</h4>
+                                    ${displayScores(result1.scores)}
+                                    ${displayMetrics(result1.metrics)}
+                                </div>
+                                <div>
+                                    <h4>${comparison.comparison}</h4>
+                                    ${displayScores(result2.scores)}
+                                    ${displayMetrics(result2.metrics)}
+                                </div>
+                            </div>
+                            ${displayDetailedComparison(urlData)}
                         </div>
                     </div>
                 `;
             });
+
+            return html;
+        }
+
+        function displayDetailedComparison(urlData) {
+            let html = '<h4>Detaillierte Änderungen</h4>';
+
+            // Verbesserungen
+            if (urlData.improvements.scores.length > 0 || urlData.improvements.metrics.length > 0) {
+                html += '<div style="background: #e8f5e8; padding: 15px; border-radius: 4px; margin-bottom: 15px;">';
+                html += '<h5 class="improvement">✅ Verbesserungen</h5>';
+
+                urlData.improvements.scores.forEach(change => {
+                    html += `
+                        <div style="margin-bottom: 8px;">
+                            <strong>${change.category}:</strong>
+                            ${change.baseline} → ${change.comparison}
+                            <span class="improvement">(+${change.change}, ${change.changePercent}%, Impact: ${change.impact})</span>
+                        </div>
+                    `;
+                });
+
+                urlData.improvements.metrics.forEach(change => {
+                    html += `
+                        <div style="margin-bottom: 8px;">
+                            <strong>${change.metric}:</strong>
+                            ${change.formattedBaseline} → ${change.formattedComparison}
+                            <span class="improvement">(${change.formattedChange}, ${change.changePercent}%, Impact: ${change.impact})</span>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+
+            // Verschlechterungen
+            if (urlData.regressions.scores.length > 0 || urlData.regressions.metrics.length > 0) {
+                html += '<div style="background: #ffebee; padding: 15px; border-radius: 4px; margin-bottom: 15px;">';
+                html += '<h5 class="regression">❌ Verschlechterungen</h5>';
+
+                urlData.regressions.scores.forEach(change => {
+                    html += `
+                        <div style="margin-bottom: 8px;">
+                            <strong>${change.category}:</strong>
+                            ${change.baseline} → ${change.comparison}
+                            <span class="regression">(${change.change}, ${Math.abs(change.changePercent)}%, Impact: ${change.impact})</span>
+                        </div>
+                    `;
+                });
+
+                urlData.regressions.metrics.forEach(change => {
+                    html += `
+                        <div style="margin-bottom: 8px;">
+                            <strong>${change.metric}:</strong>
+                            ${change.formattedBaseline} → ${change.formattedComparison}
+                            <span class="regression">(${change.formattedChange}, ${change.changePercent}%, Impact: ${change.impact})</span>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+
+            // Keine Änderungen
+            if (urlData.improvements.scores.length === 0 && urlData.improvements.metrics.length === 0 &&
+                urlData.regressions.scores.length === 0 && urlData.regressions.metrics.length === 0) {
+                html += '<div style="background: #f5f5f5; padding: 15px; border-radius: 4px; text-align: center; color: #666;">Keine signifikanten Änderungen</div>';
+            }
 
             return html;
         }
@@ -363,25 +440,6 @@
             `;
         }
 
-        function displayScoreComparison(scores1, scores2) {
-            let html = '<h4>Veränderungen</h4><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">';
-
-            Object.entries(scores1).forEach(([category, score1]) => {
-                const score2 = scores2[category];
-                const change = score2 - score1;
-                const changeClass = change > 0 ? 'improvement' : change < 0 ? 'regression' : '';
-                const arrow = change > 0 ? '↗' : change < 0 ? '↘' : '→';
-
-                html += `
-                    <div class="${changeClass}">
-                        <strong>${getCategoryName(category)}:</strong> ${score1} ${arrow} ${score2} (${change > 0 ? '+' : ''}${change})
-                    </div>
-                `;
-            });
-
-            html += '</div>';
-            return html;
-        }
 
         function getScoreClass(score) {
             if (score >= 90) return 'score-good';

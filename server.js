@@ -172,6 +172,7 @@ function compareBranches(branch1Results, branch2Results, branch1Name, branch2Nam
         comparison: branch2Name,
         improvements: [],
         regressions: [],
+        detailed: [],
         summary: {}
     };
 
@@ -184,42 +185,76 @@ function compareBranches(branch1Results, branch2Results, branch1Name, branch2Nam
         const urlComparison = {
             url: result1.url,
             scoreChanges: {},
-            metricChanges: {}
+            metricChanges: {},
+            improvements: {
+                scores: [],
+                metrics: []
+            },
+            regressions: {
+                scores: [],
+                metrics: []
+            }
         };
 
-        // Sichere Score-Vergleiche
+        // Sichere Score-Vergleiche mit granularen Details
         for (const [category, score1] of Object.entries(result1.scores || {})) {
             const score2 = result2.scores[category];
             if (typeof score1 === 'number' && typeof score2 === 'number') {
                 const change = score2 - score1;
-                urlComparison.scoreChanges[category] = {
+                const changeObj = {
+                    category: getCategoryDisplayName(category),
                     baseline: score1,
                     comparison: score2,
                     change: change,
-                    improvement: change > 0
+                    improvement: change > 0,
+                    changePercent: score1 > 0 ? Math.round((change / score1) * 100) : 0,
+                    impact: getScoreImpact(Math.abs(change))
                 };
+
+                urlComparison.scoreChanges[category] = changeObj;
+
+                if (change > 0) {
+                    urlComparison.improvements.scores.push(changeObj);
+                } else if (change < 0) {
+                    urlComparison.regressions.scores.push(changeObj);
+                }
             }
         }
 
-        // Sichere Metrik-Vergleiche
+        // Sichere Metrik-Vergleiche mit granularen Details
         for (const [metric, value1] of Object.entries(result1.metrics || {})) {
             const value2 = result2.metrics[metric];
             if (typeof value1 === 'number' && typeof value2 === 'number') {
                 const change = value2 - value1;
-                const isImprovement = change < 0;
-                urlComparison.metricChanges[metric] = {
+                const isImprovement = change < 0; // Für Metriken ist kleiner besser
+                const changeObj = {
+                    metric: getMetricDisplayName(metric),
                     baseline: value1,
                     comparison: value2,
                     change: change,
-                    improvement: isImprovement
+                    improvement: isImprovement,
+                    changePercent: value1 > 0 ? Math.round((Math.abs(change) / value1) * 100) : 0,
+                    formattedBaseline: formatMetricValue(metric, value1),
+                    formattedComparison: formatMetricValue(metric, value2),
+                    formattedChange: formatMetricChange(metric, change),
+                    impact: getMetricImpact(metric, Math.abs(change), value1)
                 };
+
+                urlComparison.metricChanges[metric] = changeObj;
+
+                if (isImprovement) {
+                    urlComparison.improvements.metrics.push(changeObj);
+                } else if (change !== 0) {
+                    urlComparison.regressions.metrics.push(changeObj);
+                }
             }
         }
 
-        const hasImprovements = Object.values(urlComparison.scoreChanges).some(c => c.improvement) ||
-                               Object.values(urlComparison.metricChanges).some(c => c.improvement);
-        const hasRegressions = Object.values(urlComparison.scoreChanges).some(c => !c.improvement && c.change !== 0) ||
-                              Object.values(urlComparison.metricChanges).some(c => !c.improvement && c.change !== 0);
+        // Sammle alle URLs für detaillierte Ansicht
+        comparison.detailed.push(urlComparison);
+
+        const hasImprovements = urlComparison.improvements.scores.length > 0 || urlComparison.improvements.metrics.length > 0;
+        const hasRegressions = urlComparison.regressions.scores.length > 0 || urlComparison.regressions.metrics.length > 0;
 
         if (hasImprovements) {
             comparison.improvements.push(urlComparison);
@@ -229,13 +264,77 @@ function compareBranches(branch1Results, branch2Results, branch1Name, branch2Nam
         }
     }
 
+    // Erweiterte Zusammenfassung
     comparison.summary = {
         totalUrls: branch1Results.length,
         urlsWithImprovements: comparison.improvements.length,
-        urlsWithRegressions: comparison.regressions.length
+        urlsWithRegressions: comparison.regressions.length,
+        totalImprovements: comparison.detailed.reduce((sum, url) =>
+            sum + url.improvements.scores.length + url.improvements.metrics.length, 0),
+        totalRegressions: comparison.detailed.reduce((sum, url) =>
+            sum + url.regressions.scores.length + url.regressions.metrics.length, 0)
     };
 
     return comparison;
+}
+
+function getCategoryDisplayName(category) {
+    const names = {
+        'performance': 'Performance',
+        'accessibility': 'Zugänglichkeit',
+        'best-practices': 'Best Practices',
+        'seo': 'SEO'
+    };
+    return names[category] || category;
+}
+
+function getMetricDisplayName(metric) {
+    const names = {
+        'first-contentful-paint': 'First Contentful Paint (FCP)',
+        'largest-contentful-paint': 'Largest Contentful Paint (LCP)',
+        'speed-index': 'Speed Index',
+        'cumulative-layout-shift': 'Cumulative Layout Shift (CLS)',
+        'total-blocking-time': 'Total Blocking Time (TBT)'
+    };
+    return names[metric] || metric;
+}
+
+function formatMetricValue(metric, value) {
+    if (metric === 'cumulative-layout-shift') {
+        return value.toFixed(3);
+    }
+    return Math.round(value) + 'ms';
+}
+
+function formatMetricChange(metric, change) {
+    const prefix = change > 0 ? '+' : '';
+    if (metric === 'cumulative-layout-shift') {
+        return prefix + change.toFixed(3);
+    }
+    return prefix + Math.round(change) + 'ms';
+}
+
+function getScoreImpact(change) {
+    if (change >= 20) return 'Hoch';
+    if (change >= 10) return 'Mittel';
+    if (change >= 5) return 'Niedrig';
+    return 'Minimal';
+}
+
+function getMetricImpact(metric, absChange, baseline) {
+    if (metric === 'cumulative-layout-shift') {
+        if (absChange >= 0.25) return 'Hoch';
+        if (absChange >= 0.1) return 'Mittel';
+        if (absChange >= 0.05) return 'Niedrig';
+        return 'Minimal';
+    }
+
+    // Für Zeit-basierte Metriken
+    const changePercent = baseline > 0 ? (absChange / baseline) * 100 : 0;
+    if (changePercent >= 50) return 'Hoch';
+    if (changePercent >= 25) return 'Mittel';
+    if (changePercent >= 10) return 'Niedrig';
+    return 'Minimal';
 }
 
 app.listen(PORT, () => {
